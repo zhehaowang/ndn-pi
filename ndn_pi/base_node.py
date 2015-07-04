@@ -20,7 +20,6 @@
 import logging
 import time
 import sys
-import random
 
 from pyndn import Name, Face, Interest, Data, ThreadsafeFace
 from pyndn.security import KeyChain
@@ -44,12 +43,13 @@ class BaseNode(object):
     This class contains methods/attributes common to both node and controller.
     
     """
-    def __init__(self):
+    def __init__(self, transport = None, conn = None):
         """
         Initialize the network and security classes for the node
         """
         super(BaseNode, self).__init__()
-
+        self.faceTransport = transport
+        self.faceConn = conn
         self._identityStorage = IotIdentityStorage()
         self._identityManager = IotIdentityManager(self._identityStorage)
         self._policyManager = IotPolicyManager(self._identityStorage)
@@ -61,25 +61,7 @@ class BaseNode(object):
         self._prepareLogging()
 
         self._setupComplete = False
-        self._instanceSerial = None
 
-        # waiting devices register this prefix and respond to discovery
-        # or configuration interest
-        self._hubPrefix = Name('/localhop/configure')
-
-    def getSerial(self):
-        """
-         Since you may wish to run two nodes on a Raspberry Pi, each
-         node will generate a unique serial number each time it starts up.
-        """
-        if self._instanceSerial is None:
-            prefixLen = 4
-            prefix = ''
-            for i in range(prefixLen):
-                prefix += (chr(random.randint(0,0xff)))
-            suffix = self.getDeviceSerial().lstrip('0')
-            self._instanceSerial = '-'.join([prefix.encode('hex'), suffix])
-        return self._instanceSerial
 
 ##
 # Logging
@@ -134,7 +116,10 @@ class BaseNode(object):
         """
         self.log.info("Starting up")
         self.loop = asyncio.get_event_loop()
-        self.face = ThreadsafeFace(self.loop, '')
+        if (self.faceTransport == None or self.faceTransport == ''):
+            self.face = ThreadsafeFace(self.loop, '')
+        else:
+            self.face = ThreadsafeFace(self.loop, self.faceTransport, self.faceConn)
         self.face.setCommandSigningInfo(self._keyChain, self.getDefaultCertificateName())
         self._keyChain.setFace(self.face)
 
@@ -144,10 +129,8 @@ class BaseNode(object):
         
         try:
             self.loop.run_forever()
-        except KeyboardInterrupt:
-            pass
         except Exception as e:
-            self.log.exception(e, exc_info=True)
+            self.log.exception(exc_info=True)
         finally:
             self._isStopped = True
 
@@ -189,6 +172,9 @@ class BaseNode(object):
         Called when the node cannot register its name with the forwarder
         :param pyndn.Name prefix: The network name that failed registration
         """
+        if self.faceTransport != None and self.faceConn != None:
+            self.log.warn("Could not register {}; give up because remote registration may not be supported, expected an auto or a manual reg back".format(prefix.toUri()))
+            return
         if self._registrationFailures < 5:
             self._registrationFailures += 1
             self.log.warn("Could not register {}, retry: {}/{}".format(prefix.toUri(), self._registrationFailures, 5)) 
@@ -205,7 +191,7 @@ class BaseNode(object):
         self.log.info("Received invalid" + dataOrInterest.getName().toUri())
 
     @staticmethod
-    def getDeviceSerial():
+    def getSerial():
         """
         Find and return the serial number of the Raspberry Pi. Provided in case
         you wish to distinguish data from nodes with the same name by serial.
@@ -216,4 +202,5 @@ class BaseNode(object):
             for line in f:
                 if line.startswith('Serial'):
                     return line.split(':')[1].strip()
+
 
