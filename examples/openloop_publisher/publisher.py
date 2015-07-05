@@ -34,6 +34,7 @@ class OpenloopPublisher(IotNode):
         self._dataPrefix = None
         self.addCommand(Name('listPrefixes'), self.listDataPrefixes, ['repo'],
             False)
+        self._count = 0
 
     def setupComplete(self):
         # The cache will clear old values every 100s
@@ -78,9 +79,10 @@ class OpenloopPublisher(IotNode):
         memUse = ps.virtual_memory().percent
         swapUse = ps.swap_memory().percent
 
-        info = {'cpu_usage':cpu_use, 'users':users, 'processes':nProcesses,
+        info = {'count': self._count, 'cpu_usage':cpu_use, 'users':users, 'processes':nProcesses,
                  'memory_usage':memUse, 'swap_usage':swapUse}
-    
+        self._count += 1
+        
         dataOut = Data(Name(self._dataPrefix).appendVersion(int(timestamp)))
         dataOut.setContent(json.dumps(info))
         dataOut.getMetaInfo().setFreshnessPeriod(10000)
