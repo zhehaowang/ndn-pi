@@ -55,19 +55,22 @@
         
         interest.setExclude(exclude);
         interest.setInterestLifetimeMilliseconds(defaultInterestLifetime);
+        interest.setMustBeFresh(true);
         face.expressInterest(interest, onData, onTimeout);
       }
       
       if (drawOutput) {
         // lastTimestamp.toVersion() * 1000
         // new Date().getTime()
+        var toDraw = JSON.parse(data.getContent().buf()).cpu_usage;
         if (firstData === true) {
           firstData = false;
           var currentTime = new Date().getTime();
           timeOffset = currentTime - lastTimestamp.toVersion() * 1000;
-          lineX.append(currentTime, JSON.parse(data.getContent().buf()).cpu_usage);
+          lineX.append(currentTime, toDraw);
         } else {
-          lineX.append(lastTimestamp.toVersion() * 1000 + timeOffset, JSON.parse(data.getContent().buf()).cpu_usage);
+          lineX.append(lastTimestamp.toVersion() * 1000 + timeOffset, toDraw);
+          console.log("Schedule to draw: " + toDraw);
         }
       } else {
         document.getElementById('content').innerHTML += EncodingUtils.dataToHtml(data);
@@ -83,6 +86,7 @@
       if (!running) {
         var interest = new Interest(new Name(dataPrefix));
         interest.setInterestLifetimeMilliseconds(defaultInterestLifetime);
+        interest.setMustBeFresh(true);
         
         //%FDU%99%DBY
         //%FDU%99%DC%23
@@ -103,6 +107,9 @@
         if (document.getElementById('rightmost-check').checked) {
           interest.setChildSelector(1);
         }
+        if (document.getElementById('default-check').checked) {
+          interest.setChildSelector(0);
+        }
         if (document.getElementById('component-check').checked) {
           interest.getName().append(Name.fromEscapedString(document.getElementById('start-component').value));
         }
@@ -115,6 +122,7 @@
         if (drawOutput) {
           smoothie.streamTo(document.getElementById("mycanvas"));
           smoothie.addTimeSeries(lineX);
+          firstData = true;
         }
       } else {
         document.getElementById('start-btn').innerText = "Start fetch";
@@ -173,7 +181,7 @@
   Start with certain component:<br>
   <input type="checkbox" id="component-check" value="component" onclick="componentClick()"></input>
   <input type="text" id="start-component" onkeydown="componentKeyDown()"></input> <br>
-  Default start:<br>
+  Default start (left most):<br>
   <input type="checkbox" id="default-check" value="default" onclick="defaultClick()" checked></input> <br>
   
   <br>
