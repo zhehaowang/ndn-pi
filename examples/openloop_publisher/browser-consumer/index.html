@@ -51,7 +51,10 @@
       console.log("onData, name: " + data.getName().toUri());
       lastTimestamp = data.getName().get(-1);
       
-      if (running && (endTime === '' || lastTimestamp.toEscapedString() < endTime)) {
+      if (endTime !== '') {
+        var endComponent = new Name.Component(Name.fromEscapedString(endTime));
+      }
+      if (running && (endTime === '' || lastTimestamp.toVersion() < endComponent.toVersion())) {
         var exclude = new Exclude();
         exclude.appendAny();
         exclude.appendComponent(lastTimestamp);
