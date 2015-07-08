@@ -6,6 +6,12 @@
 <meta charset="UTF-8">
 
 <head>
+  <style>
+    body {
+      background-color: #222222;
+      color: #FFFFFF;
+    }
+  </style>
   <!--
     In-browser consumer that fetches data from repo, or content store of master NFD
     Based on basic get example in NDN-JS
@@ -17,10 +23,11 @@
   
   <script type="text/javascript">
     // Configurations
-    var faceConn = "192.168.10.103";
+    var faceConn = "192.168.10.108";
     var dataPrefix = "/home/test1/data";
     var defaultInterestLifetime = 2000;
     var drawOutput = true;
+    var arbitraryTimeOffset = 2000;
     
     // Init
     var running = false;
@@ -34,7 +41,7 @@
     
     // Smoothie drawing
     if (drawOutput) {
-      var smoothie = new SmoothieChart();
+      var smoothie = new SmoothieChart({interpolation:"step", maxValue: 1.2, minValue: -0.2});
       var lineX = new TimeSeries();
       var timeOffset = 0;
     }
@@ -62,12 +69,18 @@
       if (drawOutput) {
         // lastTimestamp.toVersion() * 1000
         // new Date().getTime()
-        var toDraw = JSON.parse(data.getContent().buf()).cpu_usage;
+        var toDraw = 0;
+        var dataObj = JSON.parse(data.getContent().buf());
+        if (dataObj.cpu_usage === undefined) {
+          toDraw = dataObj.pir_bool;
+        } else {
+          toDraw = dataObj.cpu_usage;
+        }
         if (firstData === true) {
           firstData = false;
           var currentTime = new Date().getTime();
-          timeOffset = currentTime - lastTimestamp.toVersion() * 1000;
-          lineX.append(currentTime, toDraw);
+          timeOffset = currentTime - lastTimestamp.toVersion() * 1000 - arbitraryTimeOffset;
+          lineX.append(currentTime - arbitraryTimeOffset, toDraw);
         } else {
           lineX.append(lastTimestamp.toVersion() * 1000 + timeOffset, toDraw);
           console.log("Schedule to draw: " + toDraw);
@@ -79,7 +92,8 @@
     
     function onTimeout(interest)
     {
-      console.log("onTimeout called.");
+      console.log("onTimeout called; re-express interest: " + interest.getName().toUri());
+      face.expressInterest(interest, onData, onTimeout);
     }
     
     function run() {
@@ -120,8 +134,8 @@
         running = true;
         
         if (drawOutput) {
-          smoothie.streamTo(document.getElementById("mycanvas"));
-          smoothie.addTimeSeries(lineX);
+          smoothie.streamTo(document.getElementById("mycanvas"), 0);
+          smoothie.addTimeSeries(lineX, {strokeStyle:'#00FF00'});
           firstData = true;
         }
       } else {

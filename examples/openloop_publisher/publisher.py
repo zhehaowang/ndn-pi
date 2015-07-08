@@ -15,6 +15,9 @@
 #    sys.path.append("/home/pi/zhehao-test/pyndn2/python")
 
 # Updating PyNDN could come at a later time.
+# TODO: we've currently taken a very strange approach of replacing everything in PyNDN except files in security folder, so that
+# Adeola's derived security classes work as is...this does not seem problematic so far, as for our functions, PyNDN's sec seems self-contained...
+# This is done as a quick workaround for registerPrefix to work; in this remote registration, since nfd-autoreg gives connection refused for autoreg-ed faces
 
 from pyndn import Name, Face, Interest, Data, ThreadsafeFace
 from pyndn.util.memory_content_cache import MemoryContentCache
@@ -26,15 +29,18 @@ import psutil as ps
 import json
 from ndn_pi.iot_node import IotNode
 
+from pir import Pir
+
 import logging
 class OpenloopPublisher(IotNode):
-    def __init__(self, transport, conn):
+    def __init__(self, transport, conn, pir = None):
         super(OpenloopPublisher, self).__init__(transport, conn)
         self._missedRequests = 0
         self._dataPrefix = None
         self.addCommand(Name('listPrefixes'), self.listDataPrefixes, ['repo'],
             False)
         self._count = 0
+        self._pir = pir
 
     def setupComplete(self):
         # The cache will clear old values every 100s
@@ -72,15 +78,19 @@ class OpenloopPublisher(IotNode):
         # let it timeout
 
     def publishData(self):
-        timestamp = time.time() 
-        cpu_use = ps.cpu_percent()
-        users = [u.name for u in ps.users()]
-        nProcesses = len(ps.pids())
-        memUse = ps.virtual_memory().percent
-        swapUse = ps.swap_memory().percent
+        timestamp = time.time()
+        info = {''}
+        if self._pir == None:
+            cpu_use = ps.cpu_percent()
+            users = [u.name for u in ps.users()]
+            nProcesses = len(ps.pids())
+            memUse = ps.virtual_memory().percent
+            swapUse = ps.swap_memory().percent
 
-        info = {'count': self._count, 'cpu_usage':cpu_use, 'users':users, 'processes':nProcesses,
-                 'memory_usage':memUse, 'swap_usage':swapUse}
+            info = {'count': self._count, 'cpu_usage':cpu_use, 'users':users, 'processes':nProcesses,
+                    'memory_usage':memUse, 'swap_usage':swapUse}
+        else:
+            info = {'count': self._count, 'pir_bool': self._pir.read()}
         self._count += 1
         
         dataOut = Data(Name(self._dataPrefix).appendVersion(int(timestamp)))
@@ -91,7 +101,7 @@ class OpenloopPublisher(IotNode):
         #self._dataCache.add(dataOut)
         # instead of adding data to content cache, we put data to nfd anyway
         self.send(dataOut.wireEncode().buf())
-        print('data name: ' + dataOut.getName().toUri())
+        print('data name: ' + dataOut.getName().toUri() + '; content: ' + str(info))
 
         # repeat every 1 seconds
         self.loop.call_later(1, self.publishData)
@@ -103,8 +113,12 @@ class OpenloopPublisher(IotNode):
         #    super(ThreadsafeFace, self.face)._node._transport.send, encoding)
 
 if __name__ == '__main__':
+    # We take pin 25 as default
+    pir = Pir(25)
+    
     transport = UdpTransport()
     # TODO: This multicast address should read from nfd configuration
     conn = UdpTransport.ConnectionInfo("224.0.23.170")
-    n = OpenloopPublisher(transport, conn)
+    #conn = UdpTransport.ConnectionInfo("192.168.10.161")
+    n = OpenloopPublisher(transport, conn, pir)
     n.start()
