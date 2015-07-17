@@ -75,6 +75,8 @@ versions.
 
 ### Examples
 
+https://github.com/remap/ndn-pi/releases contains an image for raspberry pi - not necessarily up to date w/ this repostitory - please update once installed. 
+
 This toolkit contains three examples that demonstrate common node and network setups.
 -	led\_control:	Control LEDs connected to the general purpose input/output (GPIO) pins over the network
 -	hdmi\_cec: 	Turn a CEC-enabled device on or off depending on room occupancy
