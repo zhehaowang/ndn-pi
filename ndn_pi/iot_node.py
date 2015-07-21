@@ -203,7 +203,6 @@ class IotNode(BaseNode):
             newCert = IdentityCertificate()
             newCert.wireDecode(data.getContent())
             self.log.info("Received certificate from controller")
-            print(str(newCert))
 
             # NOTE: we download and install the root certificate without verifying it (!)
             # otherwise our policy manager will reject it.
@@ -216,10 +215,11 @@ class IotNode(BaseNode):
 
             def onRootCertificateDownload(interest, data):
                 try:
+                    # zhehao: the root cert is downloaded and installed without verifying; should the root cert be preconfigured?
                     self._policyManager._certificateCache.insertCertificate(data)
                     self._identityStorage.addCertificate(data)
                 except SecurityException as e:
-                    print(str(e))
+                    #print(str(e))
                     # already exists
                     pass
                 self._keyChain.verifyData(newCert, self._finalizeCertificateDownload, self._certificateValidationFailed)
@@ -238,7 +238,7 @@ class IotNode(BaseNode):
         try:
             self._identityManager.addCertificate(newCert)
         except SecurityException as e:
-            print(e)
+            #print(e)
             pass # can't tell existing certificat from another error
         self._identityManager.setDefaultCertificateForKey(newCert)
 
