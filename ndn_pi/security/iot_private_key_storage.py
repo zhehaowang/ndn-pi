@@ -87,6 +87,21 @@ class IotPrivateKeyStorage(FilePrivateKeyStorage):
         else:
             return False
 
+    def addPublicKey(self, keyName, keyDer):
+        """
+        Add a public key to the store.
+        :param Name keyName: The name of the key
+        :param Blob keyDer: The public key DER
+        """
+        if self.doesKeyExist(keyName, KeyClass.PUBLIC):
+            raise SecurityException("The public key already exists!")
+        keyUri = keyName.toUri()
+        newPath = self.nameTransform(keyUri, ".pub")
+
+        encodedDer = base64.b64encode(keyDer.toRawStr())
+        with open(newPath, 'w') as keyFile:
+            keyFile.write(encodedDer)
+
     def addPrivateKey(self, keyName, keyDer):
         """
         Add a private key to the store.

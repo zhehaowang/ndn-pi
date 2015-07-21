@@ -26,6 +26,8 @@ from pyndn import Name
 from pyndn.security.security_exception import SecurityException
 from pyndn.util.boost_info_parser import BoostInfoParser
 
+from pyndn.security.policy.certificate_cache import CertificateCache
+
 import os
 
 """
@@ -58,8 +60,11 @@ class IotPolicyManager(ConfigPolicyManager):
 
         if configFilename is None:
             configFilename = templateFilename
+        
+        certificateCache = CertificateCache()
+        super(IotPolicyManager, self).__init__(configFilename, certificateCache)
+        self._identityStorage = identityStorage
 
-        super(IotPolicyManager, self).__init__(identityStorage, configFilename)
         self.setEnvironmentPrefix(None)
         self.setTrustRootIdentity(None)
         self.setDeviceIdentity(None)

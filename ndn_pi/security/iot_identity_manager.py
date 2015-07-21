@@ -23,7 +23,6 @@ from pyndn.util import Blob
 from pyndn.name import Name
 from iot_private_key_storage import IotPrivateKeyStorage
 from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
 from pyndn.security.security_types import KeyType
 from pyndn.security.certificate import IdentityCertificate, PublicKey, CertificateSubjectDescription
 from pyndn.security.security_exception import SecurityException
@@ -42,16 +41,19 @@ class IotIdentityManager(IdentityManager):
 
     def addPrivateKey(self, keyName, keyDer):
         self._privateKeyStorage.addPrivateKey(keyName, keyDer)
-
-    def _getNewKeyBits(self, keySize, progress_func=None):
+    
+    def addPublicKey(self, keyName, keyDer):
+        self._privateKeyStorage.addPublicKey(keyName, keyDer)
+    
+    def _getNewKeyBits(self, keySize):
         # returns public and private key DER in blobs
-        key = RSA.generate(keySize, progress_func=progress_func)
+        key = RSA.generate(keySize)
         publicDer = key.publickey().exportKey(format='DER')
         privateDer = key.exportKey(format='DER', pkcs=8)
         return (Blob(publicDer, False), Blob(privateDer, False))
         
 
-    def generateRSAKeyPair(self, identityName, isKsk=False, keySize=2048, progressFunc=None):
+    def generateRSAKeyPair(self, identityName, isKsk=False, keySize=2048):
         """
         Generate a pair of RSA keys for the specified identity.
         
@@ -61,20 +63,18 @@ class IotIdentityManager(IdentityManager):
           Data-Signing-Key.
         :param int keySize: (optional) The size of the key. If omitted, use a 
           default secure key size.
-        :param function progressFunc: An update function taking a string 
-            argument. See PyCrypto's RSA.generate for more information.
         :return: The generated key name.
         :rtype: Name
         """
         keyName = self._identityStorage.getNewKeyName(identityName, isKsk)
-        publicBits, privateBits = self._getNewKeyBits(keySize, progressFunc)
+        publicBits, privateBits = self._getNewKeyBits(keySize)
         self._identityStorage.addKey(keyName, KeyType.RSA, publicBits)
         self._privateKeyStorage.addPrivateKey(keyName, privateBits)
 
         return keyName
         
 
-    def generateRSAKeyPairAsDefault(self, identityName, isKsk=False, keySize=2048, progressFunc=None):
+    def generateRSAKeyPairAsDefault(self, identityName, isKsk=False, keySize=2048):
         """
         Generate a pair of RSA keys for the specified identity and set it as 
         default key for the identity.
@@ -85,12 +85,10 @@ class IotIdentityManager(IdentityManager):
           Data-Signing-Key.
         :param int keySize: (optional) The size of the key. If omitted, use a 
           default secure key size.
-        :param function progressFunc: An update function taking a string 
-            argument. See PyCrypto's RSA.generate for more information
         :return: The generated key name.
         :rtype: Name
         """
-        newKeyName = self.generateRSAKeyPair(identityName, isKsk, keySize, progressFunc)
+        newKeyName = self.generateRSAKeyPair(identityName, isKsk, keySize)
         self._identityStorage.setDefaultKeyNameForIdentity(newKeyName)
         return newKeyName
     
@@ -110,9 +108,9 @@ class IotIdentityManager(IdentityManager):
     def generateCertificateForKey(self, keyName):
         # let any raised SecurityExceptions bubble up
         publicKeyBits = self._identityStorage.getKey(keyName)
-        publicKeyType = self._identityStorage.getKeyType(keyName)
+        #publicKeyType = self._identityStorage.getKeyType(keyName)
     
-        publicKey = PublicKey(publicKeyType, publicKeyBits)
+        publicKey = PublicKey(publicKeyBits)
 
         timestamp = Common.getNowMilliseconds()
     
@@ -121,8 +119,8 @@ class IotIdentityManager(IdentityManager):
         certificateName = keyName.getPrefix(-1).append('KEY').append(keyName.get(-1))
         certificateName.append("ID-CERT").append(Name.Component(struct.pack(">Q", timestamp)))        
 
-        certificate = IdentityCertificate(certificateName)
-
+        certificate = IdentityCertificate()
+        certificate.setName(certificateName)
 
         certificate.setNotBefore(timestamp)
         certificate.setNotAfter((timestamp + 30*86400*1000)) # about a month
@@ -137,48 +135,4 @@ class IotIdentityManager(IdentityManager):
 
         return certificate
         
-    def encryptForIdentity(self, plaintext, identityName=None, keyName=None):
-        """
-        Encrypt the given bytes using the default key for the given identity,
-        or the specfied key. If the key name is specified, the identity name is ignored.
-        If there is no key or identity name given, a SecurityException is raised.
-        :param plaintext: The data to encrypt
-        :type plaintext: Blob
-        :param Name identityName: (optional) The identity who will decrypt the message.
-        :param Name keyName: (optional) The key used to encrypt the message.
-        :return: The encrypted data
-        :rtype: Blob
-        """
-        if keyName is None:
-            keyName = self.getDefaultKeyNameForIdentity(identityName)
-        keyDer = self._identityStorage.getKey(keyName)
 
-        key = RSA.importKey(str(keyDer))
-        cipher = PKCS1_OAEP.new(key)
-        
-        encrypted = Blob(cipher.encrypt(str(plaintext)), False)
-
-        return encrypted
-
-    def decryptAsIdentity(self, ciphertext, identityName=None, keyName=None):
-        """
-        Decrypt the given bytes using the default key for the given identity,
-        or the specfied key. If the key name is specified, the identity name is ignored.
-        If there is no key or identity name given, a SecurityException is raised.
-        :param ciphertext: The data to decrypt
-        :type ciphertext: Blob
-        :param Name identityName: (optional) The identity the message is intended for.
-        :param Name keyName: (optional) The key used to decrypt the message.
-        :return: The decrypted data
-        :rtype: Blob
-        """
-        if keyName is None:
-            keyName = self.getDefaultKeyNameForIdentity(identityName)
-        keyDer = self.getPrivateKey(keyName)
-        key = RSA.importKey(str(keyDer))
-        cipher = PKCS1_OAEP.new(key)
-    
-        decrypted = Blob(cipher.decrypt(str(ciphertext)), False)
-
-        return decrypted
-        

@@ -1,50 +1,33 @@
-# -*- Mode:python; c-file-style:"gnu"; indent-tabs-mode:nil -*- */
-#
-# Copyright (C) 2014 Regents of the University of California.
-# Author: Adeola Bannis <thecodemaiden@gmail.com>
-# 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-# A copy of the GNU General Public License is in the file COPYING.
-
-
 from __future__ import print_function
 
 import logging
 import time
+from sys import stdin, stdout
+import struct
 
-from pyndn import Name, Face, Interest, Data, ThreadsafeFace
+from pyndn import Name, Face, Interest, Data
 from pyndn.util import Blob
 from pyndn.security import KeyChain
 from pyndn.security.certificate import IdentityCertificate, PublicKey, CertificateSubjectDescription
 from pyndn.encoding import ProtobufTlv
 from pyndn.security.security_exception import SecurityException
 
-from base_node import BaseNode
+from base_node import BaseNode, Command
 
-from commands import CertificateRequestMessage, UpdateCapabilitiesCommandMessage, DeviceConfigurationMessage, DevicePairingInfoMessage
+from commands import CertificateRequestMessage, UpdateCapabilitiesCommandMessage, DeviceConfigurationMessage
 from security import HmacHelper
 
-from collections import defaultdict, OrderedDict
-import json
-import base64
 
-from dialog import Dialog
-import logging 
+
+from collections import defaultdict
+import json
+
 try:
     import asyncio
 except ImportError:
     import trollius as asyncio
+
+from pyndn.threadsafe_face import ThreadsafeFace
 
 # more Python 2+3 compatibility
 try:
@@ -55,14 +38,12 @@ except NameError:
 class IotController(BaseNode):
     """
     The controller class has a few built-in commands:
-        - listCommands: return the names and capabilities of all attached 
-            devices
+        - listDevices: return the names and capabilities of all attached devices
         - certificateRequest: takes public key information and returns name of
             new certificate
-        - updateCapabilities: should be sent periodically from IotNodes to 
-            update their command lists
-        - addDevice: called by the console to begin pairing, the payload is 
-            encrypted for the controller as it contains a PIN
+        - updateCapabilities: should be sent periodically from IotNodes to update their
+           command lists
+        - addDevice: add a device based on HMAC
     It is unlikely that you will need to subclass this.
     """
     def __init__(self, nodeName, networkName):
@@ -88,13 +69,10 @@ class IotController(BaseNode):
         self._baseDirectory = {}
 
         # add the built-ins
-        self._insertIntoCapabilities('listCommands', 'directory', False)
-
-        # TODO: use xDialog in XWindows
-        self.ui = Dialog(backtitle='NDN IoT User Console', height=18, width=78)
+        self._insertIntoCapabilities('listDevices', 'directory', False)
+        self._insertIntoCapabilities('updateCapabilities', 'capabilities', True)
 
         self._directory.update(self._baseDirectory)
-        self.setLogLevel(logging.INFO)
 
     def _insertIntoCapabilities(self, commandName, keyword, isSigned):
         newUri = Name(self.prefix).append(Name(commandName)).toUri()
@@ -103,9 +81,9 @@ class IotController(BaseNode):
     def beforeLoopStart(self):
         if not self._policyManager.hasRootSignedCertificate():
             # make one....
-            self.log.warn('Generating controller key pair (this could take a while)...')
+            self.log.warn('Generating controller certificate...')
             newKey = self._identityManager.generateRSAKeyPairAsDefault(
-                self.prefix, isKsk=True, progressFunc=self._showRSAProgress)
+                self.prefix, isKsk=True)
             newCert = self._identityManager.selfSign(newKey)
             self._identityManager.addCertificateAsDefault(newCert)
         self.face.setCommandSigningInfo(self._keyChain, self.getDefaultCertificateName())
@@ -115,37 +93,19 @@ class IotController(BaseNode):
 
 
 ######
-# Initial device configuration
+# Initial configuration
 #######
-
-    def _beginPairing(self, encryptedMessage):
-        # base64 decode, decrypt, protobuf decode
-        responseCode = 202
-        try:
-            encryptedBytes = base64.urlsafe_b64decode(str(encryptedMessage.getValue()))
-            decryptedBytes = self._identityManager.decryptAsIdentity(encryptedBytes, self.prefix)
-            message = DevicePairingInfoMessage()
-            ProtobufTlv.decode(message, decryptedBytes)
-        except:
-            responseCode = 500
-        else:
-            info = message.info
-            self.loop.call_soon(self._addDeviceToNetwork, info.deviceSerial, 
-                info.deviceSuffix, info.devicePin)
-        return responseCode
-
+    # TODO: deviceSuffix will be replaced by deviceSerial
     def _addDeviceToNetwork(self, deviceSerial, newDeviceSuffix, pin):
         h = HmacHelper(pin)
         self._hmacDevices[deviceSerial] = h
 
         d = DeviceConfigurationMessage()
 
-        newDeviceSuffix = Name(newDeviceSuffix)
-
         for source, dest in [(self.networkPrefix, d.configuration.networkPrefix),
                              (self.deviceSuffix, d.configuration.controllerName),
                              (newDeviceSuffix, d.configuration.deviceSuffix)]:
-            for i in range(len(source)):
+            for i in range(source.size()):
                 component = source.get(i)
                 dest.components.append(component.getValue().toRawStr())
 
@@ -153,7 +113,6 @@ class IotController(BaseNode):
         encodedParams = ProtobufTlv.encode(d)
         interestName.append(encodedParams)
         interest = Interest(interestName)
-        interest.setInterestLifetimeMilliseconds(5000)
         h.signInterest(interest)
 
         self.face.expressInterest(interest, self._deviceAdditionResponse,
@@ -247,6 +206,7 @@ class IotController(BaseNode):
         self._keyChain.sign(certificate, self.getDefaultCertificateName())
         # store it for later use + verification
         self._identityStorage.addCertificate(certificate)
+        self._policyManager._certificateCache.insertCertificate(certificate)
         return certificate
 
 ######
@@ -321,7 +281,7 @@ class IotController(BaseNode):
             return
 
         afterPrefix = interestName.get(prefix.size()).toEscapedString()
-        if afterPrefix == "listCommands":
+        if afterPrefix == "listDevices":
             #compose device list
             self.log.debug("Received device list request")
             response = self._prepareCapabilitiesList(interestName)
@@ -330,6 +290,7 @@ class IotController(BaseNode):
             #build and sign certificate
             self.log.debug("Received certificate request")
             self._handleCertificateRequest(interest, transport)
+
         elif afterPrefix == "updateCapabilities":
             # needs to be signed!
             self.log.debug("Received capabilities update")
@@ -340,15 +301,6 @@ class IotController(BaseNode):
                 self._updateDeviceCapabilities(interest)
             self._keyChain.verifyInterest(interest, 
                     onVerifiedCapabilities, self.verificationFailed)
-        elif afterPrefix == "addDevice":
-            self.log.debug("Received pairing request")
-            def onVerifiedPairingRequest(interest):
-                response = Data(interest.getName())
-                encryptedMessage = interest.getName()[len(prefix)+1]
-                responseCode = self._beginPairing(encryptedMessage)
-                response.setContent(str(responseCode))
-                self.sendData(response, transport)
-            self._keyChain.verifyInterest(interest, onVerifiedPairingRequest, self.verificationFailed)
         else:
             response = Data(interest.getName())
             response.setContent("500")
@@ -357,40 +309,99 @@ class IotController(BaseNode):
 
     def onStartup(self):
         # begin taking add requests
-        self.log.info('Controller is ready')
+        self.loop.call_soon(self.displayMenu)
+        self.loop.add_reader(stdin, self.handleUserInput) 
 
-    def _showRSAProgress(self, displayStr=''):
-        displayStr = displayStr.strip()
-        msg = ''
-        if displayStr == 'p,q':
-            msg = 'Generating giant prime numbers...'
-        elif displayStr == 'd':
-            msg = 'Generating private exponent...'
-        elif displayStr == 'u':
-            msg = 'Checking CRT coefficient...'
-        self.log.debug(msg)
+    def displayMenu(self):
+        menuStr = "\n"
+        menuStr += "P)air a new device with serial and PIN\n"
+        menuStr += "D)irectory listing\n"
+        menuStr += "E)xpress an interest\n"
+        menuStr += "Q)uit\n"
 
+        print(menuStr)
+        print ("> ", end="")
+        stdout.flush()
+
+    def listDevices(self):
+        menuStr = ''
+        for capability, commands in self._directory.items():
+            menuStr += '{}:\n'.format(capability)
+            for info in commands:
+                signingStr = 'signed' if info['signed'] else 'unsigned'
+                menuStr += '\t{} ({})\n'.format(info['name'], signingStr)
+        print(menuStr)
+        self.loop.call_soon(self.displayMenu)
+
+    def onInterestTimeout(self, interest):
+        print('Interest timed out: {}'.interest.getName().toUri())
+
+    def onDataReceived(self, interest, data):
+        print('Received data named: {}'.format(data.getName().toUri()))
+        print('Contents:\n{}'.format(data.getContent().toRawStr()))
+    
+    def expressInterest(self):
+        try:
+            interestName = input('Interest name: ')
+            if len(interestName):
+                toSign = input('Signed? (y/N): ').upper().startswith('Y')
+                interest = Interest(Name(interestName))
+                interest.setInterestLifetimeMilliseconds(5000)
+                interest.setChildSelector(1)
+                if (toSign):
+                    self.face.makeCommandInterest(interest) 
+                self.face.expressInterest(interest, self.onDataReceived, self.onInterestTimeout)
+            else:
+                print("Aborted")
+        except KeyboardInterrupt:
+                print("Aborted")
+        finally:
+                self.loop.call_soon(self.displayMenu)
+
+    def beginPairing(self):
+        try:
+            deviceSerial = input('Device serial: ') 
+            devicePin = input('PIN: ')
+            deviceSuffix = input('Node name: ')
+        except KeyboardInterrupt:
+               print('Pairing attempt aborted')
+        else:
+            if len(deviceSerial) and len(devicePin) and len(deviceSuffix):
+                self._addDeviceToNetwork(deviceSerial, Name(deviceSuffix), 
+                    devicePin.decode('hex'))
+            else:
+               print('Pairing attempt aborted')
+        finally:
+            self.loop.call_soon(self.displayMenu)
+
+    def handleUserInput(self):
+        inputStr = stdin.readline().upper()
+        if inputStr.startswith('D'):
+            self.listDevices()
+        elif inputStr.startswith('P'):
+            self.beginPairing()
+        elif inputStr.startswith('E'):
+            self.expressInterest()
+        elif inputStr.startswith('Q'):
+            self.stop()
+        else:
+            self.loop.call_soon(self.displayMenu)
+            
+        
 
 if __name__ == '__main__':
-    import sys
     import os
-    # todo - should I enforce the suffix 'gateway'?
+    import sys
+
     nArgs = len(sys.argv) - 1
-    if nArgs < 2:
+    if nArgs == 0:
         from pyndn.util.boost_info_parser import BoostInfoParser
-        fileName = '/usr/local/etc/ndn/iot_controller.conf'
-        if nArgs == 1:
-            fileName = sys.argv[1]
+        fileName = os.path.expanduser('~/.ndn/iot_controller.conf')
     
-        try:
-            config = BoostInfoParser()
-            config.read(fileName)
-        except IOError:
-            print('Could not read {}, exiting...'.format(fileName))
-            sys.exit(1)
-        else:
-            deviceName = config["device/controllerName"][0].value
-            networkName = config["device/environmentPrefix"][0].value
+        config = BoostInfoParser()
+        config.read(fileName)
+        deviceName = config["device/controllerName"][0].value
+        networkName = config["device/environmentPrefix"][0].value
     elif nArgs == 2:
         networkName = sys.argv[1]
         deviceName = sys.argv[2]
@@ -398,30 +409,7 @@ if __name__ == '__main__':
         print('Usage: {} [network-name controller-name]'.format(sys.argv[0]))
         sys.exit(1)
 
-    try:
-        
-        tempFile = '/tmp/ndn-iot/iot.conf'
-        tempDir = os.path.dirname(tempFile)
-
-        if os.path.exists(tempFile):
-            print ('Another gateway instance may be running. If not, delete {} and try again'.format(tempFile))
-            sys.exit(1)
-        else:
-            try:
-                os.makedirs(tempDir)
-            except OSError:
-                pass # errors happen when the directory exists :/
-            # save configuration in a place where the console can read it
-            with open(tempFile, 'w') as nameFile:
-                nameFile.write('{}\t{}\n'.format(networkName, deviceName))
-    except IOError as e:
-        print('Could not write configuration: error')
-        sys.exit(1)
-
     deviceSuffix = Name(deviceName)
     networkPrefix = Name(networkName)
     n = IotController(deviceSuffix, networkPrefix)
-    try:
-        n.start()
-    finally:
-        os.remove(tempFile) 
+    n.start()

@@ -21,7 +21,7 @@ import logging
 import time
 import sys
 
-from pyndn import Name, Face, Interest, Data, ThreadsafeFace
+from pyndn import Name, Face, Interest, Data
 from pyndn.security import KeyChain
 from pyndn.security.policy import ConfigPolicyManager
 from pyndn.security.identity import IdentityManager
@@ -36,6 +36,8 @@ try:
 except ImportError:
     import trollius as asyncio
 
+from pyndn.threadsafe_face import ThreadsafeFace
+
 Command = namedtuple('Command', ['suffix', 'function', 'keywords', 'isSigned'])
 
 class BaseNode(object):
@@ -43,13 +45,12 @@ class BaseNode(object):
     This class contains methods/attributes common to both node and controller.
     
     """
-    def __init__(self, transport = None, conn = None):
+    def __init__(self):
         """
         Initialize the network and security classes for the node
         """
         super(BaseNode, self).__init__()
-        self.faceTransport = transport
-        self.faceConn = conn
+
         self._identityStorage = IotIdentityStorage()
         self._identityManager = IotIdentityManager(self._identityStorage)
         self._policyManager = IotPolicyManager(self._identityStorage)
@@ -104,9 +105,10 @@ class BaseNode(object):
         try:
             certName = self._identityStorage.getDefaultCertificateNameForIdentity( 
                 self._policyManager.getDeviceIdentity())
-        except SecurityException:
+        except SecurityException as e:
+            # zhehao: in the case of producer's /localhop prefixes, the default key is not defined in ndnsec-public-info.db
+            #print(e)
             certName = self._keyChain.getDefaultCertificateName()
-
         return certName
 
     def start(self):
@@ -116,15 +118,12 @@ class BaseNode(object):
         """
         self.log.info("Starting up")
         self.loop = asyncio.get_event_loop()
-        if (self.faceTransport == None or self.faceTransport == ''):
-            self.face = ThreadsafeFace(self.loop, '')
-        else:
-            self.face = ThreadsafeFace(self.loop, self.faceTransport, self.faceConn)
+        self.face = ThreadsafeFace(self.loop)
         self.face.setCommandSigningInfo(self._keyChain, self.getDefaultCertificateName())
+        
         self._keyChain.setFace(self.face)
 
         self._isStopped = False
-        self.face.stopWhen(lambda:self._isStopped)
         self.beforeLoopStart()
         
         try:
@@ -132,7 +131,7 @@ class BaseNode(object):
         except Exception as e:
             self.log.exception(exc_info=True)
         finally:
-            self._isStopped = True
+            self.stop()
 
     def stop(self):
         """
@@ -140,6 +139,7 @@ class BaseNode(object):
         """
         self.log.info("Shutting down")
         self._isStopped = True 
+        self.loop.stop()
         
 ###
 # Data handling
@@ -172,16 +172,13 @@ class BaseNode(object):
         Called when the node cannot register its name with the forwarder
         :param pyndn.Name prefix: The network name that failed registration
         """
-        if self.faceTransport != None and self.faceConn != None:
-            self.log.warn("Could not register {}; give up because remote registration may not be supported, expected an auto or a manual reg back".format(prefix.toUri()))
-            return
         if self._registrationFailures < 5:
             self._registrationFailures += 1
             self.log.warn("Could not register {}, retry: {}/{}".format(prefix.toUri(), self._registrationFailures, 5)) 
             self.face.registerPrefix(self.prefix, self._onCommandReceived, self.onRegisterFailed)
         else:
-            self.log.critical("Could not register device prefix, ABORTING")
-            self._isStopped = True
+            self.log.info("Prefix registration failed")
+            self.stop()
 
     def verificationFailed(self, dataOrInterest):
         """
