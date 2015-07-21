@@ -44,7 +44,7 @@ import repo_command_parameter_pb2
 import repo_command_response_pb2
 
 # Arbitrary interest lifetime matters for outstanding interest approach, this value is set to be intentionally larger than publishing interval, so that when data is received, there's likely a PIT entry.
-defaultInterestLifetime = 2000
+defaultInterestLifetime = 3000
 
 def dump(*list):
     result = ""
@@ -67,6 +67,8 @@ class Counter(object):
         exclude = Exclude()
         exclude.appendAny()
         exclude.appendComponent(self._lastTimestamp)
+        # First interest should ask for rightmost, to get rid of repo data; while all other interests can ask for leftmost, so that other consumers have less chance of causing data to be excluded
+        interest.setChildSelector(0)
         interest.setExclude(exclude)
         interest.setInterestLifetimeMilliseconds(defaultInterestLifetime)
         self._face.expressInterest(interest, self.onData, self.onTimeout)
@@ -166,6 +168,7 @@ def main():
     counter = Counter(face, repoDataPrefix)
 
     interest = Interest(Name(dataPrefix))
+    interest.setChildSelector(1)
     interest.setInterestLifetimeMilliseconds(defaultInterestLifetime)
     face.expressInterest(interest, counter.onData, counter.onTimeout)
     
