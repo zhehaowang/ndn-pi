@@ -45,12 +45,14 @@ class BaseNode(object):
     This class contains methods/attributes common to both node and controller.
     
     """
-    def __init__(self):
+    def __init__(self, transport = None, conn = None):
         """
         Initialize the network and security classes for the node
         """
         super(BaseNode, self).__init__()
-
+        self.faceTransport = transport
+        self.faceConn = conn
+        
         self._identityStorage = IotIdentityStorage()
         self._identityManager = IotIdentityManager(self._identityStorage)
         self._policyManager = IotPolicyManager(self._identityStorage)
@@ -118,7 +120,12 @@ class BaseNode(object):
         """
         self.log.info("Starting up")
         self.loop = asyncio.get_event_loop()
-        self.face = ThreadsafeFace(self.loop)
+        
+        if (self.faceTransport == None or self.faceTransport == ''):
+            self.face = ThreadsafeFace(self.loop)
+        else:
+            self.face = ThreadsafeFace(self.loop, self.faceTransport, self.faceConn)
+        
         self.face.setCommandSigningInfo(self._keyChain, self.getDefaultCertificateName())
         
         self._keyChain.setFace(self.face)
@@ -172,6 +179,8 @@ class BaseNode(object):
         Called when the node cannot register its name with the forwarder
         :param pyndn.Name prefix: The network name that failed registration
         """
+        if self.faceTransport != None and self.faceConn != None:
+            self.log.warn("Could not register {}; give up because remote registration may not be supported, expected an auto or a manual reg back".format(prefix.toUri()))
         if self._registrationFailures < 5:
             self._registrationFailures += 1
             self.log.warn("Could not register {}, retry: {}/{}".format(prefix.toUri(), self._registrationFailures, 5)) 
