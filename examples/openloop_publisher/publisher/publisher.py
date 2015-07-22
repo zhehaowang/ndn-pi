@@ -1,25 +1,6 @@
 #!/usr/bin/python
 
-#
-# This is the data publisher using MemoryContentCache
-#
-
-# remove Adeola's version of PyNDN in sys.path
-# this would also require
-# export PYTHONPATH=$PYTHONPATH:~/zhehao-test/pyndn2/python
-
-# this test does not expect prefix registered on the remote nfd that we connect to...
-#import sys
-#if ("/usr/local/lib/python2.7/dist-packages/PyNDN-2.0a3-py2.7.egg" in sys.path):
-#    sys.path.remove("/usr/local/lib/python2.7/dist-packages/PyNDN-2.0a3-py2.7.egg")
-#    sys.path.append("/home/pi/zhehao-test/pyndn2/python")
-
-# Updating PyNDN could come at a later time.
-# TODO: we've currently taken a very strange approach of replacing everything in PyNDN except files in security folder, so that
-# Adeola's derived security classes work as is...this does not seem problematic so far, as for our functions, PyNDN's sec seems self-contained...
-# This is done as a quick workaround for registerPrefix to work; in this remote registration, since nfd-autoreg gives connection refused for autoreg-ed faces
-
-from pyndn import Name, Face, Interest, Data, ThreadsafeFace
+from pyndn import Name, Face, Interest, Data
 from pyndn.util.memory_content_cache import MemoryContentCache
 from pyndn.transport.udp_transport import UdpTransport
 

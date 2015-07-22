@@ -20,11 +20,6 @@
 # This is based on PyNDN's example of repo_ng insertion and basic consumer
 
 import sys
-# we would need to remove Adeola's version of PyNDN
-# this expects PYTHONPATH to contain /home/pi/zhehao-test/pyndn2/python
-if ("/usr/local/lib/python2.7/dist-packages/PyNDN-2.0a3-py2.7.egg" in sys.path):
-    sys.path.remove("/usr/local/lib/python2.7/dist-packages/PyNDN-2.0a3-py2.7.egg")
-    sys.path.append("/home/pi/zhehao-test/pyndn2/python")
 
 import time
 from pyndn import Name
