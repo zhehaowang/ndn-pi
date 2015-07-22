@@ -181,7 +181,7 @@ class BaseNode(object):
         """
         if self.faceTransport != None and self.faceConn != None:
             self.log.warn("Explicit face transport and connectionInfo: Could not register {}; expect a manual or autoreg on the other side.".format(prefix.toUri()))
-        else if self._registrationFailures < 5:
+        elif self._registrationFailures < 5:
             self._registrationFailures += 1
             self.log.warn("Could not register {}, retry: {}/{}".format(prefix.toUri(), self._registrationFailures, 5)) 
             self.face.registerPrefix(self.prefix, self._onCommandReceived, self.onRegisterFailed)
