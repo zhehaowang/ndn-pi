@@ -180,8 +180,8 @@ class BaseNode(object):
         :param pyndn.Name prefix: The network name that failed registration
         """
         if self.faceTransport != None and self.faceConn != None:
-            self.log.warn("Could not register {}; give up because remote registration may not be supported, expected an auto or a manual reg back".format(prefix.toUri()))
-        if self._registrationFailures < 5:
+            self.log.warn("Explicit face transport and connectionInfo: Could not register {}; expect a manual or autoreg on the other side.".format(prefix.toUri()))
+        else if self._registrationFailures < 5:
             self._registrationFailures += 1
             self.log.warn("Could not register {}, retry: {}/{}".format(prefix.toUri(), self._registrationFailures, 5)) 
             self.face.registerPrefix(self.prefix, self._onCommandReceived, self.onRegisterFailed)
