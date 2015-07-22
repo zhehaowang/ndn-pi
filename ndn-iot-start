@@ -30,7 +30,10 @@ nfd-start
 
 nfd-status -c &> /dev/null
 
-[[ "$?" -ne 0 ]] && { echo "NFD could not be started, aborting"; exit 1;}
+[[ "$?" -ne 2 ]] && { echo "NFD could not be started, aborting"; exit 1;}
+
+# TODO: get rid of this arbitrary sleep
+sleep 10
 
 for INTERFACE in "${INTERFACES[@]}" 
 do
