@@ -76,6 +76,7 @@ class IotNode(BaseNode):
 
     def beforeLoopStart(self):
         print("Serial: {}\nConfiguration PIN: {}".format(self.deviceSerial, self._createNewPin()))
+        # TODO: after PyNDN update, openloop publisher's registration would call onRegisterFailed; while nfd-status on the other side shows it's actually successful
         self.face.registerPrefix(self.prefix, 
             self._onConfigurationReceived, self.onRegisterFailed)
 
