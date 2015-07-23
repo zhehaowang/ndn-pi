@@ -14,6 +14,11 @@ Change note for the new image (Updated Jul 22):
 
 The image has little amount of free space left, which is likely to cause problems if testing as-is. (When testing as-is, experienced problems include a much higher chance of interest timeout, and data not received)
 
+### Notes:
+-   /home/pi/ndn-pi: tracking https://github.com/zhehaowang/ndn-pi (origin), with https://github.com/named-data/ndn-pi (upstream); ndn-iot-start runs nfd-start, and registers / on udp multicast face.
+-   Libraries/binaries installed in default locations when compiling/installing from source; config files kept at default locations.
+-   User name: pi; password: raspberry; Network SSID: Raspi_NDN; Password: defaultpasswd;
+
 ### Changes:
 -	Base node constructor takes connectionInfo for creating face
 -	Added openloop publisher example (Requires specific configuration!)
