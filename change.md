@@ -6,7 +6,7 @@ Change note for the new image (Updated Jul 22):
 * ndn-cxx: [commit](https://github.com/named-data/ndn-cxx/commit/35020caedf296346332155e22eae447b7785b873), Jul 1, 2015 
 * nfd: [commit](https://github.com/named-data/nfd/commit/2666473042796614a0c2a54636c29f5b17507470), Jun 26, 2015 (release 0.3.3)
 * repo-ng: [commit](https://github.com/named-data/repo-ng/commit/6e818129190497de8851a6f2d0ae57dfcccb0f49), May 4, 2015 (latest)
-* PyNDN2: [commit]((https://github.com/named-data/PyNDN2/commit/c67f23471c685ea6ab05c27b54c07544842e03fb), Jul 16, 2015 (latest)
+* PyNDN2: [commit](https://github.com/named-data/PyNDN2/commit/c67f23471c685ea6ab05c27b54c07544842e03fb), Jul 16, 2015 (latest)
 
 ### Recommended: 
 * Use SD card > 4GB; 
